@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>HW4</title>
+        <script src="https://d3js.org/d3.v6.min.js"></script>
+        <script src="https://unpkg.com/d3-simple-slider"></script>
+        <link rel="stylesheet" href="css/style.css">
+    </head>
+    <body>
+        <div id="year"></div>
+        <div id="country"></div>
+        <div id="menu">
+            <input type="radio" name="param" value="gdp" checked> gdp<br>
+            <input type="radio" name="param" value="child-mortality"> child-mortality<br>
+            <input type="radio" name="param" value="life-expectancy"> life-expectancy<br>
+            <input type="radio" name="param" value="fertility-rate"> fertility-rate<br>
+        </div>
+        <div id="slider"></div>
+        
+        <script type="text/javascript">
+            loadData().then(({data, world})=>{
+                const width = window.innerWidth;
+                const height = window.innerHeight;
+                const sliderHeight = 100;
+                const duration = 700;
+                
+                let year = '1900';
+                let param = 'gdp';
+
+                const svg = d3.select('body').append('svg').attr('width', width).attr('height', height);
+                
+                const colors = ['#d73027', '#1a9850'];
+                const noColor = '#CDCCCC';
+                
+                const years = Object.keys(data[0][param]).map(d=>+d).filter(d=>d);
+                
+                // Part 1: создайте линейную цветовую шкалу на основе цветов
+                const color = d3.scaleLinear() //.range(colors);
+                let paramRange = data.map(d => +d[param][year]);
+                color.domain([d3.min(paramRange), d3.max(paramRange)]).range(colors);
+                
+                // Part 2: создайте шкалы х и y
+                const x = d3.scaleBand(years, [0, width]).padding(.1);
+                y = d3.scaleLinear().range([sliderHeight, 0]);
+                
+                // Part 3: создайте svg внутри #menu и добавить туда легенду
+                const legend = d3.select('#menu').append('svg')
+                    .attr('width', 200).attr("height", 40)
+                let gradient = legend.append('defs')
+                    .append("svg:linearGradient")
+                        .attr("id", "gradient")
+
+                gradient.append("stop")
+                    .attr("offset", "0%")
+                    .attr("stop-color", '#d73027')
+                    .attr("stop-opacity", 1);
+                gradient.append("stop")
+                    .attr("offset", "100%")
+                    .attr("stop-color", '#1a9850')
+                    .attr("stop-opacity", 1);
+
+                legend.append('rect')
+                    .attr('width', 200).attr("height", 20)
+                    .style("fill", "url(#gradient)");
+
+                const axis = legend.append('g').attr('id','axis').attr('transform', 'translate(0,20)');
+
+                d3.selectAll('input[name="param"]').on('change',function(){
+                    param = this.value;
+                    // paramRange = data.map(d => +d[param][year]);
+                    update();
+                })
+
+                const slider = d3.sliderBottom()
+                    .domain([d3.min(years),d3.max(years)])
+                    .step(1).width(width).default(year)
+                    .ticks(0).displayValue(false)
+                    .on('onchange', val => {
+                        year = val;
+                        update();
+                    });
+                    
+                    
+                var range = d3.select('#slider').append('svg')
+                    .attr('width', width).attr('height', sliderHeight);
+                
+                range.append('rect').attr('width', width).attr('height', height).attr('id', 'overlay');
+
+                range.append('g').call(slider);
+
+                d3.select('g.slider').selectAll('line').remove();
+                d3.select('g.parameter-value path')
+                    .attr('d', `M 0,0 V ${sliderHeight} H -${x.bandwidth()} V 0 Z`)
+
+                // Part 1: создайте проекцию d3.geoEquirectangular() и подстройте ее под размеры экрана, а также
+                // создайте генератор пути
+                var gfg = d3.geoEquirectangular() 
+                    .scale(height / 1.5 / Math.PI) 
+                    .rotate([0, 0])
+                    .center([0, 0]) 
+                    .translate([width / 2, height / 2])
+                
+                let pathGenerator = d3.geoPath()
+
+                // Part 1: добавьте карту мира при помощи генератора пути
+                const map = svg.append("g") 
+                    .selectAll("path") 
+                    .data(world.features)
+                    .enter().append("path")
+                    .attr("d", pathGenerator.projection(gfg))
+                    .on('mouseover', overPolygon)
+                    .on('mouseout', outOfPolygon)
+                
+                // Part 1: добавьте обработчики событий мыши для отображения имени страны в элементе #country
+                function overPolygon(d){
+                    d3.select('#country')
+                        .style('font-size', '24pt')
+                        .text(d3.select(this)['_groups'][0][0]['__data__']['properties']['name']);
+                }
+
+                function outOfPolygon(){
+                    d3.select('#country').text("");
+                }
+
+                function update(){
+                    d3.select('#year').text(year);
+
+                    // после создания цветовой шкалы можно будет обновить ее домен
+                    color.domain(d3.extent(data.map(d=>+d[param][year])));
+
+                    map.attr('fill', feature =>{
+                            // находим страну в наборе данных
+                            let country = data.find(d=>d.geo === feature.id.toLowerCase());
+
+                            // Part 1: задайте цвет полигона в зависимости от выбранных параметров
+                            if (typeof country !== 'undefined')
+                            {
+                                return color(+country[param][year])
+                            }
+                            else
+                            {
+                                return noColor
+                            } 
+                        });
+
+                    let array = years.map(y=>d3.sum(data.map(d=>+d[param][y])));
+
+                    // Part 2: обновьте домен шкалы y
+                    y.domain([0, d3.max(array)])
+                    
+                    new_data = years.map((year_val, i) => ({year: year_val, value: array[i]}))
+                    // console.log(new_data)
+                    // Part 2: реализуйте создание и обновление барчарта
+                    var u = d3.select('g.slider').selectAll("rect")
+                        .data(new_data)
+
+                    u
+                        .enter()
+                        .append("rect") // Add a new rect for each new elements
+                        .merge(u) // get the already existing elements as well
+                        .transition() // and apply changes to all of them
+                        .duration(1000)
+                        .attr("x", function(d) { return x(d.year); })
+                        .attr("y", function(d) { return y(d.value); })
+                        .attr("width", x.bandwidth())
+                        .attr("height", function(d) { return sliderHeight - y(d.value); })
+                        .attr("fill", "#69b3a2")
+                    
+                    // Part 3: обновите шкалу в легенде на основе выбранных параметров
+                    paramRange = data.map(d=> +d[param][year]);
+                    paramRangeMax = d3.max(paramRange)
+                    paramRangeMin = d3.min(paramRange)
+                    var gradScale = d3.scaleLinear()
+                        .range([0, 200])
+                        .domain([paramRangeMin, paramRangeMax]);
+                    var yAxis = d3.axisBottom()
+                        .scale(gradScale)
+                        .tickValues([
+                            (paramRangeMax - paramRangeMin) / 5.0,
+                            (paramRangeMax - paramRangeMin) / 5.0 * 2,
+                            (paramRangeMax - paramRangeMin) / 5.0 * 3,
+                            (paramRangeMax - paramRangeMin) / 5.0 * 4,
+                        ])
+                        axis.call(yAxis)
+                }
+                
+                update();
+            });
+
+            async function loadData() {
+                const population = await d3.csv('data/pop.csv');
+                const rest = { 
+                    'gdp': await d3.csv('data/gdppc.csv'),
+                    'child-mortality': await d3.csv('data/cmu5.csv'),
+                    'life-expectancy': await d3.csv('data/life_expect.csv'),
+                    'fertility-rate': await d3.csv('data/tfr.csv')
+                };
+                const data = population.map(d=>{
+                    return {
+                        geo: d.geo,
+                        country: d.country,
+                        region: d.region,
+                        population: {...d},
+                        ...Object.values(rest).map(v=>v.find(r=>r.geo===d.geo)).reduce((o, d, i)=>({...o, [Object.keys(rest)[i]]: d }), {})
+                    }
+                })
+                const world = await d3.json('https://enjalot.github.io/wwsd/data/world/world-110m.geojson');
+                return {data, world}
+            }
+        
+        </script>
+    </body>
+</html>
